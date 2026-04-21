@@ -1,0 +1,66 @@
+#!/bin/bash
+
+LOG_FILE="/var/log/auth.log"
+
+echo "============================================="
+echo "   SSH Brute Force Analysis (Last 24 Hours)  "
+echo "============================================="
+
+# Get last 24 hours logs
+LOGS=$(journalctl --since "24 hours ago" 2>/dev/null | grep "sshd")
+
+# If journalctl not available, fallback
+if [ -z "$LOGS" ]; then
+    LOGS=$(grep "$(date --date="1 day ago" '+%b %d')" $LOG_FILE | grep "sshd")
+fi
+
+echo ""
+echo "[+] Total Failed Login Attempts:"
+FAILED=$(echo "$LOGS" | grep "Failed password" | wc -l)
+echo "$FAILED"
+
+echo ""
+echo "[+] Attacker IPs (Top Sources):"
+echo "---------------------------------------------"
+printf "%-20s %-10s\n" "IP Address" "Attempts"
+echo "---------------------------------------------"
+
+echo "$LOGS" | grep "Failed password" | \
+awk '{print $(NF-3)}' | sort | uniq -c | sort -nr | \
+while read count ip; do
+    printf "%-20s %-10s\n" "$ip" "$count"
+done
+
+echo "---------------------------------------------"
+
+# Detect brute force (threshold: >5 attempts)
+echo ""
+echo "[+] Detected Brute Force Attacks (Threshold >5):"
+echo "---------------------------------------------"
+printf "%-20s %-10s %-15s\n" "IP Address" "Attempts" "Status"
+echo "---------------------------------------------"
+
+echo "$LOGS" | grep "Failed password" | \
+awk '{print $(NF-3)}' | sort | uniq -c | \
+while read count ip; do
+    if [ "$count" -gt 5 ]; then
+        printf "%-20s %-10s %-15s\n" "$ip" "$count" "Brute Force"
+    fi
+done
+
+echo "---------------------------------------------"
+
+# IOC Section
+echo ""
+echo "[+] Indicators of Compromise (IOC):"
+echo "---------------------------------------------"
+
+echo "Suspicious IPs:"
+echo "$LOGS" | grep "Failed password" | \
+awk '{print $(NF-3)}' | sort | uniq
+
+echo ""
+echo "Attack Type: SSH Brute Force"
+echo "Log Source: /var/log/auth.log"
+
+echo "============================================="
